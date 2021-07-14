@@ -1,0 +1,15 @@
+name: survey-summarizer
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9*
+  - flake8
+  - black
+  - pandas
+  - xlrd
+  - xlsxwriter
+  - jupyterlab
+  - pysimplegui
+  - pip
+  - pip:
+      - --editable .
