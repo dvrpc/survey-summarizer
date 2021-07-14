@@ -214,7 +214,41 @@ def write_to_excel():
 
     graph_sheet_row_counter = 1
 
-    # Multi-option radio button questions
+    # *** Yes/No questions ***
+
+    start_row = 1
+    pie_col = "A"
+    for prompt, df in data["yes_no"].items():
+        df.to_excel(writer, sheet_name="yes_no", startrow=start_row)
+
+        sheet = writer.sheets["yes_no"]
+        sheet.write(start_row - 1, 0, prompt, format_prompt)
+
+        # Make pie chart
+        chart = writer.book.add_chart({"type": "pie"})
+        chart.set_size({"width": 350, "height": 350})
+        chart.set_title({"name": prompt, "name_font": {"size": 10}})
+
+        chart.add_series(
+            {
+                "values": ["yes_no", start_row + 1, 1, start_row + 2, 1],
+                "categories": ["yes_no", start_row + 1, 0, start_row + 2, 0],
+                "points": [
+                    {"fill": {"color": "#67a9cf"}},
+                    {"fill": {"color": "#ef8a62"}},
+                ],
+            }
+        )
+
+        chart_sheet.insert_chart(pie_col + str(graph_sheet_row_counter), chart)
+
+        start_row += 5
+        pie_col = "G"
+
+    graph_sheet_row_counter += 20
+
+    # *** Multi-option radio button questions ***
+
     bar_fill_colors = {2: "#ece2f0", 3: "#a6bddb", 4: "#1c9099"}
     start_row = 1
 
@@ -228,13 +262,15 @@ def write_to_excel():
         # Make grouped bar chart
         chart = writer.book.add_chart({"type": "column"})
         chart.set_size({"width": 720, "height": 350})
-        chart.set_title({"name": prompt})
+        chart.set_title({"name": prompt, "name_font": {"size": 12}})
         chart.set_x_axis(
             {
                 "major_gridlines": {"visible": True, "line": {"width": 0.75, "dash_type": "dash"}},
             },
         )
         chart.set_y_axis({"major_gridlines": {"visible": False}})
+
+        # Add each series to the chart
         for graph_col in [2, 3, 4]:
             chart.add_series(
                 {
@@ -258,16 +294,6 @@ def write_to_excel():
 
     sheet.set_column(1, 1, 70)
     sheet.set_column(2, 5, 18)
-
-    # Yes/No questions
-    start_row = 1
-    for prompt, df in data["yes_no"].items():
-        df.to_excel(writer, sheet_name="yes_no", startrow=start_row)
-
-        sheet = writer.sheets["yes_no"]
-        sheet.write(start_row - 1, 0, prompt, format_prompt)
-
-        start_row += 5
 
     # Questions with lists of semicolons
     start_row = 1
