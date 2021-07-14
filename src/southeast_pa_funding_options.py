@@ -1,9 +1,9 @@
 import pandas as pd
+from pathlib import Path
+from datetime import datetime
 
 from src.helpers.ask_user_for_file import ask_user_for_file
 
-# filepath = ask_user_for_file()
-filepath = "/Users/aaron/Downloads/Funding Options Survey.csv"
 
 # This list matches the columns (/sequence) of the CSV file
 survey_form = [
@@ -196,16 +196,32 @@ def crunch_raw_data(filepath) -> dict:
     return crunched_data
 
 
-def write_to_excel():
+def write_to_excel(source_file: Path, output_file: Path) -> None:
+    """
+    - Write excel file by crunching raw data into summary tables
+    - Add a graph for each summary table
 
-    writer = pd.ExcelWriter("test123.xlsx", engine="xlsxwriter")
+    Arguments:
+        source_file (Path): filepath to input CSV file
+        output_file (Path): filepath to the resulting .xlsx file
+
+    Returns:
+        None: but creates a new output_file with summary tables, graphs, and raw data
+    """
+
+    # Create the write object and all necessary font styles
+    writer = pd.ExcelWriter(output_file, engine="xlsxwriter")
 
     format_prompt = writer.book.add_format({"italic": True, "font_size": 14, "color": "blue"})
 
-    data = crunch_raw_data(filepath)
+    # Crunch the raw CSV into summary tables
+    data = crunch_raw_data(source_file)
+
+    # Write a dummy, empty dataframe so that a 'charts' tab gets created
+    # We will be inserting graphs into this tab, using data from other tabs
+    # that we're about to create
 
     pd.DataFrame([0]).to_excel(writer, sheet_name="charts")
-
     chart_sheet = writer.sheets["charts"]
 
     # ------------------------
@@ -227,7 +243,7 @@ def write_to_excel():
         # Make pie chart
         chart = writer.book.add_chart({"type": "pie"})
         chart.set_size({"width": 350, "height": 350})
-        chart.set_title({"name": prompt, "name_font": {"size": 10}})
+        chart.set_title({"name": prompt, "name_font": {"size": 12}})
 
         chart.add_series(
             {
@@ -261,11 +277,12 @@ def write_to_excel():
 
         # Make grouped bar chart
         chart = writer.book.add_chart({"type": "column"})
-        chart.set_size({"width": 720, "height": 350})
+        chart.set_size({"width": 800, "height": 350})
         chart.set_title({"name": prompt, "name_font": {"size": 12}})
         chart.set_x_axis(
             {
                 "major_gridlines": {"visible": True, "line": {"width": 0.75, "dash_type": "dash"}},
+                "num_font": {"size": 9},
             },
         )
         chart.set_y_axis({"major_gridlines": {"visible": False}})
@@ -295,7 +312,8 @@ def write_to_excel():
     sheet.set_column(1, 1, 70)
     sheet.set_column(2, 5, 18)
 
-    # Questions with lists of semicolons
+    # *** Questions with lists of semicolons ***
+
     start_row = 1
     for prompt, df in data["semicolon_lists"].items():
 
@@ -304,7 +322,36 @@ def write_to_excel():
         sheet = writer.sheets["semicolon"]
         sheet.write(start_row - 1, 0, prompt, format_prompt)
 
+        # Make bar chart
+        chart = writer.book.add_chart({"type": "bar"})
+        chart.set_size({"width": 800, "height": 350})
+        chart.set_title({"name": prompt, "name_font": {"size": 12}})
+        chart.set_y_axis(
+            {
+                "reverse": True,
+                "major_gridlines": {"visible": False},
+                "num_font": {"size": 8},
+            },
+        )
+        chart.set_x_axis(
+            {
+                "major_gridlines": {"visible": False},
+            },
+        )
+        chart.set_legend({"none": True})
+        chart.add_series(
+            {
+                "values": ["semicolon", start_row + 1, 2, start_row + df.shape[0], 2],
+                "categories": ["semicolon", start_row + 1, 1, start_row + df.shape[0], 1],
+                "data_labels": {"value": True, "position": "outside_end"},
+                "gap": 50,
+            }
+        )
+
+        chart_sheet.insert_chart("A" + str(graph_sheet_row_counter), chart)
+
         start_row += 3 + df.shape[0]
+        graph_sheet_row_counter += 20
     sheet.set_column(1, 1, 70)
 
     # Freeform text questions
@@ -320,9 +367,13 @@ def write_to_excel():
         start_row += 3 + df.shape[0]
     sheet.set_column(0, 0, 150)
 
-    # --------------------------
-    # Make graphs of the results
-    # --------------------------
+    # ------------------------------------------------------
+    # Write the raw data file into the output as its own tab
+    # ------------------------------------------------------
+
+    raw_df = pd.read_csv(source_file)
+
+    raw_df.to_excel(writer, sheet_name="raw_data")
 
     # ----------
     # Save file!
@@ -331,4 +382,21 @@ def write_to_excel():
     writer.save()
 
 
-write_to_excel()
+def main():
+    """
+    - Ask user for source filepath
+    - Create an output filepath with today's date
+    - Crunch source file into summary tables, make graphs, and save to .xlsx
+    """
+
+    source_filepath = ask_user_for_file()
+
+    timestamp = str(datetime.now()).split(" ")[0]
+
+    output_filepath = Path(".") / f"Southeast PA Funding Options {timestamp}.xlsx"
+
+    write_to_excel(source_filepath, output_filepath)
+
+
+if __name__ == "__main__":
+    main()
