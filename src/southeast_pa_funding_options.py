@@ -17,11 +17,11 @@ survey_form = [
     "More trails and bicycle/pedestrian improvements",
     "List any specific projects or improvements that you feel are critical to the region’s future.",
     "Do you support raising state funds across Pennsylvania to pay for transportation needs?",
-    "Toll Major Bridges, such as the Girard Point Bridge on I-95 near the airport",
-    "Tolls on Managed Lanes, such as a new lane on I-76 (Schuylkill Expressway) or I-476 (Blue Route)",
-    "Congestion Pricing, such as charging higher tolls during periods of peak travel on roads or bridges",
-    "Corridor Tolling, such as adding tolls along a roadway, similar to the PA Turnpike",
-    "Road User Charge, such as a Vehicle Miles Traveled (VMT) fee, whereby instead of the gas tax all vehicles pay a fee based on the miles driven",
+    "Toll Major Bridges",
+    "Tolls on Managed Lanes",
+    "Congestion Pricing",
+    "Corridor Tolling",
+    "Road User Charge",
     "Fees or Tax increases on other non-transportation items",
     "Do you support raising funds at the city or county level in Southeast Pennsylvania to supplement federal and state funds to pay for local transportation needs?",
     "Earned Income Tax",
@@ -204,15 +204,58 @@ def write_to_excel():
 
     data = crunch_raw_data(filepath)
 
+    pd.DataFrame([0]).to_excel(writer, sheet_name="charts")
+
+    chart_sheet = writer.sheets["charts"]
+
+    # ------------------------
+    # Write all data as tables
+    # ------------------------
+
+    graph_sheet_row_counter = 1
+
     # Multi-option radio button questions
+    bar_fill_colors = {2: "#ece2f0", 3: "#a6bddb", 4: "#1c9099"}
     start_row = 1
+
     for prompt, df in data["multi_radio_questions"].items():
+        # Write the dataframe and prompt header
         df.to_excel(writer, sheet_name="radio", startcol=1, startrow=start_row, index=False)
 
         sheet = writer.sheets["radio"]
         sheet.write(start_row - 1, 0, prompt, format_prompt)
 
+        # Make grouped bar chart
+        chart = writer.book.add_chart({"type": "column"})
+        chart.set_size({"width": 720, "height": 350})
+        chart.set_title({"name": prompt})
+        chart.set_x_axis(
+            {
+                "major_gridlines": {"visible": True, "line": {"width": 0.75, "dash_type": "dash"}},
+            },
+        )
+        chart.set_y_axis({"major_gridlines": {"visible": False}})
+        for graph_col in [2, 3, 4]:
+            chart.add_series(
+                {
+                    "values": [
+                        "radio",
+                        start_row + 1,
+                        graph_col,
+                        start_row + df.shape[0],
+                        graph_col,
+                    ],
+                    "categories": ["radio", start_row + 1, 1, start_row + df.shape[0], 1],
+                    "name": ["radio", start_row, graph_col, start_row, graph_col],
+                    "fill": {"color": bar_fill_colors[graph_col]},
+                    "data_labels": {"value": True, "position": "inside_end"},
+                }
+            )
+        chart_sheet.insert_chart("A" + str(graph_sheet_row_counter), chart)
+
         start_row += 3 + df.shape[0]
+        graph_sheet_row_counter += 20
+
     sheet.set_column(1, 1, 70)
     sheet.set_column(2, 5, 18)
 
@@ -250,6 +293,14 @@ def write_to_excel():
 
         start_row += 3 + df.shape[0]
     sheet.set_column(0, 0, 150)
+
+    # --------------------------
+    # Make graphs of the results
+    # --------------------------
+
+    # ----------
+    # Save file!
+    # ----------
 
     writer.save()
 
