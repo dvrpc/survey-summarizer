@@ -1,12 +1,19 @@
+from __future__ import annotations
+
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
 from src.helpers.ask_user_for_file import ask_user_for_file
-
+from src.helpers.extract_data import (
+    count_responses_to_multi_entry_question,
+    count_semicolon_list,
+    count_the_values,
+    get_freeform_text,
+)
 
 # This list matches the columns (/sequence) of the CSV file
-survey_form = [
+SURVEY = [
     "Timestamp",
     "What is your view of the transportation network in southeastern Pennsylvania, including  current condition, coverage and services? (Choose as many as apply)",
     "New or extended rail lines",
@@ -39,136 +46,41 @@ survey_form = [
 ]
 
 # These are the questions where users give ratings to each option in the list
-questions = {
+RADIO_QUESTIONS = {
     "What kind of improvements, if any, would you like to see to improve the transportation network?": {
-        "columns": survey_form[2:8],
+        "columns": SURVEY[2:8],
         "options": ["Lowest priority", "Medium priority", "Highest priority"],
     },
-    survey_form[9]: {
-        "columns": survey_form[10:16],
+    SURVEY[9]: {
+        "columns": SURVEY[10:16],
         "options": ["I oppose this", "I need to learn more", "I support this"],
     },
-    survey_form[16]: {
-        "columns": survey_form[17:25],
+    SURVEY[16]: {
+        "columns": SURVEY[17:25],
         "options": ["I oppose this", "I need to learn more", "I support this"],
     },
 }
 # These are the freeform text entries
-freeform_text = [survey_form[8]] + survey_form[25:27]
+FREEFORM_TEXT = [SURVEY[8]] + SURVEY[25:27]
 
 # These are the columns that have semicolon-delimited lists
-semicolon_lists = [survey_form[1]] + survey_form[27:]
+SEMICOLON_LISTS = [SURVEY[1]] + SURVEY[27:]
 
 # These are the columns with a binary Yes/No answer
-yes_no = [survey_form[9], survey_form[16]]
+YES_NO = [SURVEY[9], SURVEY[16]]
 
 
-def count_semicolon_list(data_series: pd.Series) -> pd.DataFrame:
+def crunch_raw_data(filepath: Path) -> dict[str, dict[str, pd.DataFrame]]:
     """
-    - Each entry in the series is a semicolon-delimited list
-    - Count the occurances of each unique item within each series entry
+    - Read raw CSV file, and replace column names with cleaned up
 
     Arguments:
-        data_series (pd.Series): single column from a dataframe, with semicolon-delimited data
+        filepath (Path): filepath to survey output
 
     Returns:
-        pd.DataFrame: dataframe with results
+        dict: a dictionary keyed on question type with sub-dictionary that is keyed by
+              prompt, with the aggregated pd.DataFrame as the value
     """
-    results = {}
-    for entry in data_series.dropna():
-        for item in entry.split(";"):
-            if item not in results:
-                results[item] = 0
-
-            results[item] += 1
-
-    results_as_ordered_list = [[x, results[x]] for x in reversed(sorted(results, key=results.get))]
-
-    return pd.DataFrame(results_as_ordered_list, columns=["text value", "count"])
-
-
-def count_the_values(data_series: pd.Series) -> pd.DataFrame:
-    """
-    - Count the number of yes and no responses
-
-    Arguments:
-        data_series (pd.Series): single column from a dataframe, with yes/no data
-
-    Returns:
-        pd.DataFrame: dataframe with results
-    """
-    return data_series.value_counts(dropna=True).to_frame("count")
-
-
-def get_freeform_text(data_series: pd.Series) -> pd.DataFrame:
-    """
-    - Strip out any blank entries in the series
-
-    Arguments:
-        data_series (pd.Series): single column from a dataframe, with freeform text
-
-    Returns:
-        pd.DataFrame: dataframe with each non-null entry
-
-    """
-    return data_series.dropna().to_frame()
-
-
-def count_responses_to_multi_entry_question(
-    raw_df: pd.DataFrame, list_of_cols_to_summarize: list, list_of_options: list
-) -> pd.DataFrame:
-    """
-    - Run through a set of columns, where the header is the option and each row's value is one
-    of a set of possible options (i.e. radio button)
-
-    - This function gets the value counts for each column, and then flattens all results
-    from all of the columns into a single resulting dataframe
-
-    Arguments:
-        raw_df (pd.DataFrame): dataframe with all of the raw data
-        list_of_cols_to_summarize (list): name of each column in raw_df that you want to aggregate
-        list_of_options (list): all of the exact text values that users were able to choose from
-
-    Returns:
-        pd.DataFrame: dataframe with 'Option' column holding the original column name, and another
-                      column for each of the provided list of options
-    """
-
-    # Get the number of times each option was selected for each question
-    question_results = {}
-    for col in list_of_cols_to_summarize:
-        count_df = count_the_values(raw_df[col]).reset_index()
-
-        count_df.columns = ["value", "count"]
-
-        question_results[col] = count_df
-
-    # Extract the counts for each of the provided options
-    results = []
-    for option, option_df in question_results.items():
-        option_results = {}
-        for possible_option in list_of_options:
-            option_results[possible_option] = 0
-        for _, row in option_df.iterrows():
-
-            for possible_option in list_of_options:
-                if possible_option == row["value"]:
-                    option_results[possible_option] = row["count"]
-
-        new_row = [option]
-
-        for _, v in option_results.items():
-            new_row.append(v)
-
-        results.append(new_row)
-
-    return pd.DataFrame(results, columns=["Option"] + list_of_options)
-
-
-def crunch_raw_data(filepath) -> dict:
-
-    df = pd.read_csv(filepath)
-    df.columns = survey_form
 
     crunched_data = {
         "multi_radio_questions": {},
@@ -177,18 +89,21 @@ def crunch_raw_data(filepath) -> dict:
         "freeform_text": {},
     }
 
-    for colname in yes_no:
+    df = pd.read_csv(filepath)
+    df.columns = SURVEY
+
+    for colname in YES_NO:
         crunched_data["yes_no"][colname] = count_the_values(df[colname])
 
-    for colname in semicolon_lists:
+    for colname in SEMICOLON_LISTS:
         crunched_data["semicolon_lists"][colname] = count_semicolon_list(df[colname])
 
-    for colname in freeform_text:
+    for colname in FREEFORM_TEXT:
         crunched_data["freeform_text"][colname] = get_freeform_text(df[colname])
 
-    for prompt in questions:
-        columns = questions[prompt]["columns"]
-        options = questions[prompt]["options"]
+    for prompt in RADIO_QUESTIONS:
+        columns = RADIO_QUESTIONS[prompt]["columns"]
+        options = RADIO_QUESTIONS[prompt]["options"]
         crunched_data["multi_radio_questions"][prompt] = count_responses_to_multi_entry_question(
             df, columns, options
         )
