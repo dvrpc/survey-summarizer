@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import click
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
@@ -70,12 +71,25 @@ SEMICOLON_LISTS = [SURVEY[1]] + SURVEY[27:]
 YES_NO = [SURVEY[9], SURVEY[16]]
 
 
-def crunch_raw_data(filepath: Path) -> dict[str, dict[str, pd.DataFrame]]:
+@click.command()
+@click.option("--filter", "-f", default=None)
+def southeast_pa_funding_options(filter):
+    """
+    Crunch raw CSV into output XLSX file
+    """
+    print(f"Filtering raw data to {filter=}")
+    main(filter)
+
+
+def crunch_raw_data(
+    filepath: Path, place_name_filter: str = None
+) -> dict[str, dict[str, pd.DataFrame]]:
     """
     - Read raw CSV file, and replace column names with cleaned up
 
     Arguments:
         filepath (Path): filepath to survey output
+        place_name_filter (str): name of a place to filter on (e.g. 'Philadelphia')
 
     Returns:
         dict: a dictionary keyed on question type with sub-dictionary that is keyed by
@@ -90,6 +104,17 @@ def crunch_raw_data(filepath: Path) -> dict[str, dict[str, pd.DataFrame]]:
     }
 
     df = pd.read_csv(filepath)
+
+    if place_name_filter:
+        print("FILTERING!", place_name_filter)
+        # Make sure no NaNs exist
+        df["Where do you serve?: (check all that apply)"] = df[
+            "Where do you serve?: (check all that apply)"
+        ].fillna("no response provided")
+
+        # Filter the dataframe to rows that contain the `place_name_filter`
+        df = df[df["Where do you serve?: (check all that apply)"].str.contains(place_name_filter)]
+
     df.columns = SURVEY
 
     for colname in YES_NO:
@@ -111,7 +136,7 @@ def crunch_raw_data(filepath: Path) -> dict[str, dict[str, pd.DataFrame]]:
     return crunched_data
 
 
-def write_to_excel(source_file: Path, output_file: Path) -> None:
+def write_to_excel(source_file: Path, output_file: Path, place_name_filter: str = None) -> None:
     """
     - Write excel file by crunching raw data into summary tables
     - Add a graph for each summary table
@@ -119,6 +144,7 @@ def write_to_excel(source_file: Path, output_file: Path) -> None:
     Arguments:
         source_file (Path): filepath to input CSV file
         output_file (Path): filepath to the resulting .xlsx file
+        place_name_filter (str): name of a place to filter on (e.g. 'Philadelphia')
 
     Returns:
         None: but creates a new output_file with summary tables, graphs, and raw data
@@ -130,7 +156,7 @@ def write_to_excel(source_file: Path, output_file: Path) -> None:
     format_prompt = writer.book.add_format({"italic": True, "font_size": 14, "color": "blue"})
 
     # Crunch the raw CSV into summary tables
-    data = crunch_raw_data(source_file)
+    data = crunch_raw_data(source_file, place_name_filter)
 
     # Write a dummy, empty dataframe so that a 'charts' tab gets created
     # We will be inserting graphs into this tab, using data from other tabs
@@ -297,20 +323,28 @@ def write_to_excel(source_file: Path, output_file: Path) -> None:
     writer.save()
 
 
-def main():
+def main(place_name_filter: str = None):
     """
     - Ask user for source filepath
     - Create an output filepath with today's date
     - Crunch source file into summary tables, make graphs, and save to .xlsx
+
+    Arguments:
+        place_name_filter (str): name of a place to filter on (e.g. 'Philadelphia')
     """
 
     source_filepath = ask_user_for_file()
 
     timestamp = str(datetime.now()).split(" ")[0]
 
-    output_filepath = Path(".") / f"Southeast PA Funding Options {timestamp}.xlsx"
+    if place_name_filter:
+        output_filepath = (
+            Path(".") / f"Southeast PA Funding Options - for {place_name_filter} {timestamp}.xlsx"
+        )
+    else:
+        output_filepath = Path(".") / f"Southeast PA Funding Options {timestamp}.xlsx"
 
-    write_to_excel(source_filepath, output_filepath)
+    write_to_excel(source_filepath, output_filepath, place_name_filter)
 
 
 if __name__ == "__main__":
